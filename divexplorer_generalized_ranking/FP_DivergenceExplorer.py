@@ -1130,3 +1130,96 @@ def compute_divergence_itemsets(
             fm_df["d_accuracy_w"] = fm_df["support"] * fm_df["d_accuracy"]
 
     return fm_df
+
+
+
+def instanceConfusionMatrix(df, class_map = {0: 'N', 1: 'P' }):
+    # TODO
+    df["tn"] = (
+        (df.true_class == df.predicted) & (df.true_class == class_map["N"])
+    ).astype(int)
+    df["fp"] = (
+        (df.true_class != df.predicted) & (df.true_class == class_map["N"])
+    ).astype(int)
+    df["tp"] = (
+        (df.true_class == df.predicted) & (df.true_class == class_map["P"])
+    ).astype(int)
+    df["fn"] = (
+        (df.true_class != df.predicted) & (df.true_class == class_map["P"])
+    ).astype(int)
+    return df
+
+
+
+
+
+
+
+def prune_categorical(df_input, categorical_attributes, metric, true_class_name = 'class', pred_class_name = 'predicted', cols_orderTP = ["tn", "fp", "fn", "tp"], class_map = {'N': 0, 'P': 1}, target = None):
+    
+    def _support(_x, _n_rows):
+
+        out = np.sum(_x, axis=0) / _n_rows
+        return np.array(out).reshape(-1)
+        
+    def filterColumns(df_filter, cols):
+        return df_filter[(df_filter[df_filter.columns[list(cols)]] > 0).all(1)]
+
+    def sum_values(_x):
+        out = np.sum(_x, axis=0)
+        return np.array(out).reshape(-1)
+    
+    
+    import pandas as pd
+    
+    import numpy as np
+    
+    from copy import deepcopy
+    if metric == 'd_outcome':
+        cols_orderTP = [target]
+        targets = deepcopy(df_input[[target]])
+
+
+    else:
+        
+        y_true_pred = deepcopy(df_input[[true_class_name, pred_class_name]])
+        targets = instanceConfusionMatrix(y_true_pred, true_class_name, pred_class_name, class_map)
+    
+    
+    X_cat_onh = oneHotEncoding(df_input[categorical_attributes])
+    
+    
+    df_with_targets = pd.concat(
+                [X_cat_onh, targets[cols_orderTP]], axis=1
+            )
+    
+    ary_col_idx = np.arange(X_cat_onh.values.shape[1])
+    itemset_dict = ary_col_idx.reshape(-1, 1)
+    
+
+
+
+    targets_sum = [sum_values(filterColumns(df_with_targets, item)[cols_orderTP]) for item in itemset_dict]
+    targets_sum.append(np.asarray([sum_values(df_with_targets[cols_orderTP])][0]))
+
+    df1 = pd.DataFrame(targets_sum, columns=cols_orderTP)
+    df1['itemsets'] = list(X_cat_onh.columns) + [frozenset([])]
+    
+
+    if metric == 'd_outcome':
+        support = _support(X_cat_onh.values, X_cat_onh.values.shape[0])
+        df1['support'] = list(support) + [1]
+
+    pattern_divergence = compute_divergence_itemsets(df1, metrics = [metric],  cols_orderTP=cols_orderTP, len_dataset = df_input.shape[0])
+    items = list(pattern_divergence.loc[pattern_divergence[metric]>0]['itemsets'].values)
+
+    keep_items = {}
+    for item in items:
+        s = item.split('=')
+        attribute, value = s[0], "=".join(s[1:])
+        if attribute not in keep_items:
+            keep_items[attribute] = []
+        keep_items[attribute].append(value)
+
+    return keep_items
+

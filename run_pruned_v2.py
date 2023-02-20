@@ -28,7 +28,7 @@ def run_pruning_experiment(
     output_dir="output_results_2",
     saveFig=True,
     dataset_dir=DATASET_DIRECTORY,
-    min_instances=50,
+    min_instances=0,
     take_top_k=None,
     no_all=True,
     no_pruning=True,
@@ -57,6 +57,7 @@ def run_pruning_experiment(
             raise ValueError(f"take_top_k should be a int, {take_top_k} was given")
 
     additional_taxonomy = None
+    target = None
 
     if dataset_name == "wine":
         from import_process_dataset import import_process_wine, train_classifier_kv
@@ -103,7 +104,14 @@ def run_pruning_experiment(
         ) = import_process_online_shoppers_intention()
         # # Train and predict with RF classifier
 
-        df = train_classifier_kv(df, encoding=True)
+        attributes = list(df.columns)
+        attributes.remove("class")
+        categorical_attributes = [
+            a for a in attributes if a not in continuous_attributes
+        ]
+
+
+        df = train_classifier_kv(df, encoding=True, categorical_attributes = categorical_attributes)
 
     elif dataset_name == "folkstables":
         from import_process_dataset import import_folkstables
@@ -143,14 +151,50 @@ def run_pruning_experiment(
         df_analyze = train_classifier_kv(
             df, encoding=True, categorical_attributes=categorical_attributes
         )
-    else:
+    elif dataset_name == "bank-full":
+
+        from import_process_dataset import (
+            import_process_bank_full,
+            train_classifier_kv,
+        )
+
+        df, class_map, continuous_attributes = import_process_bank_full()
+
+        attributes = list(df.columns)
+        attributes.remove("class")
+        categorical_attributes = [
+            a for a in attributes if a not in continuous_attributes
+        ]
+
+        df_analyze = train_classifier_kv(
+            df, encoding=True, categorical_attributes=categorical_attributes
+        )
+    elif dataset_name == "real_estate":
+        from import_process_dataset import import_process_real_estate
+
+        df, target, continuous_attributes = import_process_real_estate()
+    else:  
         raise ValueError()
 
     # # Tree divergence
 
+    
+
+    
+
     true_class_name = "class"
     pred_class_name = "predicted"
     cols_c = [true_class_name, pred_class_name]
+
+    if metric == 'd_outcome':
+        categorical_attributes = [a for a in list(df.columns) if a not in continuous_attributes+[target]]
+    else:
+        attributes = [a for a in df.columns if a not in cols_c] 
+        categorical_attributes = [a for a in attributes if a not in continuous_attributes]
+        
+
+
+    print(categorical_attributes)
 
     df_analyze = df.copy()
 
@@ -216,12 +260,25 @@ def run_pruning_experiment(
         minimal_gain_str = f"_g_{minimal_gain}"
 
     import time
+    out_pruning_time = {}
 
     for keep in keeps:
         if keep:
+            if metric!='d_outcome':
+                from divexplorer_generalized.FP_DivergenceExplorer import prune_categorical
+                keep_items_cat = prune_categorical(df_analyze, categorical_attributes, metric, true_class_name = true_class_name, pred_class_name = pred_class_name, class_map = class_map)
+            else:
+                from divexplorer_generalized_ranking.FP_DivergenceExplorer import prune_categorical
+                keep_items_cat = prune_categorical(df_analyze, categorical_attributes, metric, target=target)
+
+            pruning_start_time = time.time()
             keep_items = tree_discr.get_keep_items_associated_with_divergence()
+            
+            keep_items.update(keep_items_cat)
+            pruning_time = time.time()-pruning_start_time
             keep_str = "_pruned"
         else:
+            pruning_time = 0
             keep_items = None
             keep_str = ""
         print(keep_str)
@@ -290,6 +347,9 @@ def run_pruning_experiment(
 
                 out_fp.setdefault(min_sup_divergence, {})[key] = len(FP_fm)
 
+                out_pruning_time.setdefault(min_sup_divergence, {})[key] = pruning_time
+                
+
                 del FP_fm
 
         # # Store performance results
@@ -322,6 +382,11 @@ def run_pruning_experiment(
                 os.path.join(output_results, f"{conf_name}_div.json"), "w"
             ) as output_file:
                 output_file.write(json.dumps(out_maxdiv))
+
+            with open(
+                os.path.join(output_results, f"{conf_name}_time_pruning.json"), "w"
+            ) as output_file:
+                output_file.write(json.dumps(out_pruning_time))
 
     import os
 
@@ -513,7 +578,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--min_instances",
         type=int,
-        default=50,
+        default=0,
         help="specify the number of minimum instances for statistical significance",
     )
 

@@ -957,3 +957,137 @@ def compute_divergence_itemsets(
     if "d_accuracy_w" in metrics:
         fm_df["d_accuracy_w"] = fm_df["support"] * fm_df["d_accuracy"]
     return fm_df
+
+
+def instanceConfusionMatrix(df, class_name='class', predicted_name = 'predicted', class_map = {0: 'N', 1: 'P' }):
+    # TODO
+    df["tn"] = (
+        (df[class_name] == df[predicted_name]) & (df[class_name] == class_map["N"])
+    ).astype(int)
+    df["fp"] = (
+        (df[class_name] != df[predicted_name]) & (df[class_name] == class_map["N"])
+    ).astype(int)
+    df["tp"] = (
+        (df[class_name] == df[predicted_name]) & (df[class_name] == class_map["P"])
+    ).astype(int)
+    df["fn"] = (
+        (df[class_name] != df[predicted_name]) & (df[class_name] == class_map["P"])
+    ).astype(int)
+    return df
+
+
+
+def prune_categorical(df_input, categorical_attributes, metric, true_class_name = 'class', pred_class_name = 'predicted', cols_orderTP = ["tn", "fp", "fn", "tp"], class_map = {'N': 0, 'P': 1}):
+    import pandas as pd
+    
+    import numpy as np
+    
+    from copy import deepcopy
+    if metric == 'd_outcome':
+        raise ValueError()
+        
+    y_true_pred = deepcopy(df_input[[true_class_name, pred_class_name]])
+
+    #from divexplorer_generalized.FP_DivergenceExplorer import instanceConfusionMatrix
+
+    targets = instanceConfusionMatrix(y_true_pred, true_class_name, pred_class_name, class_map)
+
+    #from divexplorer_generalized.FP_DivergenceExplorer import oneHotEncoding
+
+    X_cat_onh = oneHotEncoding(df_input[categorical_attributes])
+    
+    
+    df_with_conf_matrix = pd.concat(
+                [X_cat_onh, targets[cols_orderTP]], axis=1
+            )
+    
+    ary_col_idx = np.arange(X_cat_onh.values.shape[1])
+    itemset_dict = ary_col_idx.reshape(-1, 1)
+    
+    
+    def filterColumns(df_filter, cols):
+        return df_filter[(df_filter[df_filter.columns[list(cols)]] > 0).all(1)]
+
+    def sum_values(_x):
+        out = np.sum(_x, axis=0)
+        return np.array(out).reshape(-1)
+
+    targets_sum = [sum_values(filterColumns(df_with_conf_matrix, item)[cols_orderTP]) for item in itemset_dict]
+    targets_sum.append(np.asarray([sum_values(df_with_conf_matrix[cols_orderTP])][0]))
+
+    df1 = pd.DataFrame(targets_sum, columns=cols_orderTP)
+    df1['itemsets'] = list(X_cat_onh.columns) + [frozenset([])]
+    
+    from divexplorer_generalized.FP_DivergenceExplorer import compute_divergence_itemsets
+
+    pattern_divergence = compute_divergence_itemsets(df1, metrics = [metric])
+    items = list(pattern_divergence.loc[pattern_divergence[metric]>0]['itemsets'].values)
+
+    keep_items = {}
+    for item in items:
+        s = item.split('=')
+        attribute, value = s[0], "=".join(s[1:])
+        if attribute not in keep_items:
+            keep_items[attribute] = []
+        keep_items[attribute].append(value)
+
+    return keep_items
+
+
+
+
+def prune_categorical2(df_input, categorical_attributes, metric, true_class_name = 'class', pred_class_name = 'predicted', cols_orderTP = ["tn", "fp", "fn", "tp"], class_map = {'N': 0, 'P': 1}):
+    import pandas as pd
+    
+    import numpy as np
+    
+    from copy import deepcopy
+    if metric == 'd_outcome':
+        raise ValueError()
+        
+    y_true_pred = deepcopy(df_input[[true_class_name, pred_class_name]])
+
+    #from divexplorer_generalized.FP_DivergenceExplorer import instanceConfusionMatrix
+
+    targets = instanceConfusionMatrix(y_true_pred, true_class_name, pred_class_name, class_map)
+
+    #from divexplorer_generalized.FP_DivergenceExplorer import oneHotEncoding
+
+    X_cat_onh = oneHotEncoding(df_input[categorical_attributes])
+    
+    
+    df_with_conf_matrix = pd.concat(
+                [X_cat_onh, targets[cols_orderTP]], axis=1
+            )
+    
+    ary_col_idx = np.arange(X_cat_onh.values.shape[1])
+    itemset_dict = ary_col_idx.reshape(-1, 1)
+    
+    
+    def filterColumns(df_filter, cols):
+        return df_filter[(df_filter[df_filter.columns[list(cols)]] > 0).all(1)]
+
+    def sum_values(_x):
+        out = np.sum(_x, axis=0)
+        return np.array(out).reshape(-1)
+
+    targets_sum = [sum_values(filterColumns(df_with_conf_matrix, item)[cols_orderTP]) for item in itemset_dict]
+    targets_sum.append(np.asarray([sum_values(df_with_conf_matrix[cols_orderTP])][0]))
+
+    df1 = pd.DataFrame(targets_sum, columns=cols_orderTP)
+    df1['itemsets'] = list(X_cat_onh.columns) + [frozenset([])]
+
+    from divexplorer_generalized.FP_DivergenceExplorer import compute_divergence_itemsets
+
+    pattern_divergence = compute_divergence_itemsets(df1, metrics = [metric])
+    items = list(pattern_divergence.loc[pattern_divergence[metric]>0]['itemsets'].values)
+
+    keep_items = {}
+    for item in items:
+        s = item.split('=')
+        attribute, value = s[0], "=".join(s[1:])
+        if attribute not in keep_items:
+            keep_items[attribute] = []
+        keep_items[attribute].append(value)
+
+    return keep_items

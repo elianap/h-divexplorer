@@ -340,10 +340,7 @@ def import_process_compas(
     # Warning
     df = df_raw[cols_propb].copy()
 
-    df["length_of_stay"] = (
-        pd.to_datetime(df_raw["c_jail_out"]).dt.date
-        - pd.to_datetime(df_raw["c_jail_in"]).dt.date
-    ).dt.days
+    df["length_of_stay"] = [i.days for i in (pd.to_datetime(df_raw["c_jail_out"]).dt.date  - pd.to_datetime(df_raw["c_jail_in"]).dt.date)]
 
     df = df.loc[
         abs(df["days_b_screening_arrest"]) <= 30
